@@ -1,0 +1,36 @@
+{
+  "name": "notes-clipboard-sync",
+  "version": "0.1.0",
+  "description": "Sync appended content from macOS Notes.app into the system clipboard.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.14.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phonowell/notes-clipboard-sync.git"
+  },
+  "bugs": {
+    "url": "https://github.com/phonowell/notes-clipboard-sync/issues"
+  },
+  "homepage": "https://github.com/phonowell/notes-clipboard-sync#readme",
+  "scripts": {
+    "notes": "tsx src/cli.ts",
+    "start": "tsx src/cli.ts watch --interval 1",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "macos",
+    "notes",
+    "clipboard",
+    "automation",
+    "typescript"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
