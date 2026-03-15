@@ -9,7 +9,9 @@ const currentDir = dirname(fileURLToPath(import.meta.url))
 const helperPath = join(currentDir, '..', 'tools', 'paste-listener.swift')
 const STARTUP_TIMEOUT_MS = 2_000
 
-export const createPasteShortcutListener = (onPaste: () => void) => {
+export const createPasteShortcutListener = (
+  onPaste: () => void | Promise<void>,
+) => {
   let child: ReturnType<typeof spawn> | null = null
 
   return {
@@ -47,7 +49,11 @@ export const createPasteShortcutListener = (onPaste: () => void) => {
 
         stdout.on('line', (line) => {
           if (line === 'event=paste-shortcut') {
-            onPaste()
+            Promise.resolve(onPaste()).catch((error) => {
+              const message =
+                error instanceof Error ? error.message : String(error)
+              console.error(message)
+            })
             return
           }
 

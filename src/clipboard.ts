@@ -14,3 +14,5 @@ export const writeClipboard = async (text: string) =>
     })
     child.stdin.end(text)
   })
+
+export const clearClipboard = () => writeClipboard('')

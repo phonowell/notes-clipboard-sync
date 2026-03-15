@@ -1,5 +1,5 @@
 import { fetchNotes } from './notes.js'
-import { writeClipboard } from './clipboard.js'
+import { clearClipboard, writeClipboard } from './clipboard.js'
 import { parseCliConfig } from './config.js'
 import {
   checkAccessibilityPermission,
@@ -147,9 +147,10 @@ const runWatch = async (
   let bufferedClipboard = ''
   let flushTimer: NodeJS.Timeout | null = null
   let pasteConsumeStatus = accessibilityStatus
-  const listener = createPasteShortcutListener(() => {
+  const listener = createPasteShortcutListener(async () => {
     if (!activeClipboard) return
     activeClipboard = ''
+    await clearClipboard()
     printResult('consume', { status: 'consumed' })
   })
 
