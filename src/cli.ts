@@ -1,5 +1,9 @@
 import { fetchNotes } from './notes.js'
-import { clearClipboard, writeClipboard } from './clipboard.js'
+import {
+  clearClipboardIfUnchanged,
+  type ClipboardState,
+  writeClipboard,
+} from './clipboard.js'
 import { parseCliConfig } from './config.js'
 import {
   checkAccessibilityPermission,
@@ -13,6 +17,7 @@ import { sendNotification } from './notification.js'
 import { createPasteShortcutListener } from './paste-listener.js'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const CONSUME_CLEAR_DELAY_MS = 250
 
 const printResult = (label: string, values: Record<string, string | number>) => {
   const output = Object.entries(values)
@@ -57,12 +62,15 @@ type PollResult = {
 }
 
 const flushClipboard = async (text: string) => {
-  if (!text) return
-  await writeClipboard(text)
+  if (!text) return null
+
+  const state = await writeClipboard(text)
   printResult('clipboard', {
     bytes: text.length,
+    changeCount: state.changeCount,
     status: 'updated',
   })
+  return state
 }
 
 const runOnce = async (
@@ -143,15 +151,28 @@ const runWatch = async (
     await runInit(account, statePath)
   }
 
-  let activeClipboard = ''
+  let activeClipboard: ClipboardState | null = null
   let bufferedClipboard = ''
   let flushTimer: NodeJS.Timeout | null = null
+  let consumeTimer: NodeJS.Timeout | null = null
   let pasteConsumeStatus = accessibilityStatus
   const listener = createPasteShortcutListener(async () => {
     if (!activeClipboard) return
-    activeClipboard = ''
-    await clearClipboard()
-    printResult('consume', { status: 'consumed' })
+    const consumedClipboard = activeClipboard
+    activeClipboard = null
+
+    if (consumeTimer) clearTimeout(consumeTimer)
+    consumeTimer = setTimeout(async () => {
+      consumeTimer = null
+
+      try {
+        const result = await clearClipboardIfUnchanged(consumedClipboard)
+        printResult('consume', { status: result.matched ? 'consumed' : 'skipped' })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        printResult('error', { message })
+      }
+    }, CONSUME_CLEAR_DELAY_MS)
   })
 
   if (accessibilityStatus.status === 'granted') {
@@ -189,10 +210,9 @@ const runWatch = async (
 
       try {
         const nextClipboard = activeClipboard
-          ? `${activeClipboard}${text}`
+          ? `${activeClipboard.text}${text}`
           : text
-        await flushClipboard(nextClipboard)
-        activeClipboard = nextClipboard
+        activeClipboard = await flushClipboard(nextClipboard)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         printResult('error', { message })
