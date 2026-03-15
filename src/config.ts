@@ -6,11 +6,13 @@ export type CliConfig = {
   command: 'init' | 'once' | 'permissions' | 'watch'
   debounceSeconds: number
   intervalSeconds: number
+  promptAccessibility: boolean
+  requireAccessibility: boolean
   statePath: string
 }
 
 const DEFAULT_ACCOUNT = 'iCloud'
-const DEFAULT_DEBOUNCE_SECONDS = 1
+const DEFAULT_DEBOUNCE_SECONDS = 2
 const DEFAULT_INTERVAL_SECONDS = 1
 
 export const defaultStatePath = () =>
@@ -29,6 +31,8 @@ const readValue = (args: string[], flag: string) => {
   return value ?? ''
 }
 
+const hasFlag = (args: string[], flag: string) => args.includes(flag)
+
 export const parseCliConfig = (argv: string[]): CliConfig => {
   const [rawCommand] = argv
   const command =
@@ -41,6 +45,8 @@ export const parseCliConfig = (argv: string[]): CliConfig => {
   const statePath = readValue(argv, '--state') || defaultStatePath()
   const intervalValue = readValue(argv, '--interval')
   const debounceValue = readValue(argv, '--debounce')
+  const promptAccessibility = hasFlag(argv, '--prompt-accessibility')
+  const requireAccessibility = hasFlag(argv, '--require-accessibility')
   const parsedInterval = Number(intervalValue || DEFAULT_INTERVAL_SECONDS)
   const parsedDebounce = Number(debounceValue || DEFAULT_DEBOUNCE_SECONDS)
   const intervalSeconds =
@@ -57,6 +63,8 @@ export const parseCliConfig = (argv: string[]): CliConfig => {
     command,
     debounceSeconds,
     intervalSeconds,
+    promptAccessibility,
+    requireAccessibility,
     statePath,
   }
 }

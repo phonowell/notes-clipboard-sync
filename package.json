@@ -15,7 +15,7 @@
   "homepage": "https://github.com/phonowell/notes-clipboard-sync#readme",
   "scripts": {
     "notes": "tsx src/cli.ts",
-    "start": "tsx src/cli.ts watch --interval 1",
+    "start": "tsx src/cli.ts watch --interval 1 --prompt-accessibility --require-accessibility",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

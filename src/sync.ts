@@ -1,6 +1,9 @@
 import type { Conflict, Delta, NoteSnapshot, SyncResult } from './types.js'
 import { createState } from './state.js'
 
+const normalizeDeltaText = (delta: Delta) =>
+  delta.kind === 'append' ? delta.text.replace(/^[\r\n]+/, '') : delta.text
+
 const createDelta = (
   note: NoteSnapshot,
   kind: Delta['kind'],
@@ -59,5 +62,5 @@ export const diffNotes = (
 
 export const formatClipboardText = (deltas: Delta[]) =>
   deltas
-    .map((delta) => delta.text)
-    .join('\n\n')
+    .map(normalizeDeltaText)
+    .join('')

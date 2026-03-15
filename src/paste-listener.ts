@@ -3,52 +3,100 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
-import type { PermissionStatus } from './permissions.js'
+import type { PermissionCheck } from './permissions.js'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const helperPath = join(currentDir, '..', 'tools', 'paste-listener.swift')
+const STARTUP_TIMEOUT_MS = 2_000
 
 export const createPasteShortcutListener = (onPaste: () => void) => {
   let child: ReturnType<typeof spawn> | null = null
 
   return {
-    start: async (): Promise<PermissionStatus> => {
-      child = spawn('swift', [helperPath], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
+    start: async (): Promise<PermissionCheck> =>
+      new Promise<PermissionCheck>((resolve) => {
+        child = spawn('swift', [helperPath], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
 
-      if (!child.stdout || !child.stderr) {
-        throw new Error('paste-listener stdio unavailable')
-      }
-
-      const stdout = createInterface({ input: child.stdout })
-      let permissionStatus: PermissionStatus = 'unavailable'
-
-      stdout.on('line', (line) => {
-        if (line === 'event=paste-shortcut') onPaste()
-        if (line === 'trusted=true') {
-          permissionStatus = 'granted'
+        if (!child.stdout || !child.stderr) {
+          resolve({
+            detail: 'paste-listener stdio unavailable',
+            status: 'unavailable',
+          })
+          return
         }
-        if (line === 'permission=denied') {
-          permissionStatus = 'denied'
-          console.log('paste-listener permission=denied')
+
+        const stdout = createInterface({ input: child.stdout })
+        let startupResolved = false
+        let stderrOutput = ''
+
+        const finalize = (result: PermissionCheck) => {
+          if (startupResolved) return
+          startupResolved = true
+          clearTimeout(startupTimeout)
+          resolve(result)
         }
-      })
 
-      child.stderr.on('data', (chunk) => {
-        const message = chunk.toString().trim()
-        if (message) console.error(message)
-      })
+        const startupTimeout = setTimeout(() => {
+          finalize({
+            detail: 'paste shortcut listener startup timed out',
+            status: 'unavailable',
+          })
+        }, STARTUP_TIMEOUT_MS)
 
-      child.on('exit', (code) => {
-        console.log(`paste-listener exit=${code ?? -1}`)
-      })
+        stdout.on('line', (line) => {
+          if (line === 'event=paste-shortcut') {
+            onPaste()
+            return
+          }
 
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 200)
-      })
+          if (line === 'permission=denied') {
+            finalize({
+              detail: 'Accessibility denied',
+              status: 'denied',
+            })
+            return
+          }
 
-      return permissionStatus
-    },
+          if (line === 'monitor=unavailable') {
+            finalize({
+              detail: 'global key monitor unavailable',
+              status: 'unavailable',
+            })
+            return
+          }
+
+          if (line === 'listener=ready') {
+            finalize({
+              detail: 'paste shortcut listener ready',
+              status: 'granted',
+            })
+          }
+        })
+
+        child.stderr.on('data', (chunk) => {
+          const message = chunk.toString().trim()
+          if (!message) return
+          stderrOutput = stderrOutput
+            ? `${stderrOutput}\n${message}`
+            : message
+          console.error(message)
+        })
+
+        child.on('exit', (code) => {
+          if (!startupResolved) {
+            finalize({
+              detail: stderrOutput || `paste-listener exited with code ${code ?? -1}`,
+              status: 'unavailable',
+            })
+            return
+          }
+
+          if (code !== 0) {
+            console.log(`paste-listener exit=${code ?? -1}`)
+          }
+        })
+      }),
   }
 }

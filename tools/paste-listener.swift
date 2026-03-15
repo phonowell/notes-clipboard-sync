@@ -41,4 +41,7 @@ if monitor == nil {
     exit(1)
 }
 
+print("listener=ready")
+fflush(stdout)
+
 RunLoop.current.run()

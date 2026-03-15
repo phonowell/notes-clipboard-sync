@@ -1,7 +1,12 @@
 import { fetchNotes } from './notes.js'
 import { writeClipboard } from './clipboard.js'
 import { parseCliConfig } from './config.js'
-import { checkPermissions } from './permissions.js'
+import {
+  checkAccessibilityPermission,
+  checkPermissions,
+  formatAccessibilityGuidance,
+  formatNotesGuidance,
+} from './permissions.js'
 import { createState, loadState, saveState } from './state.js'
 import { diffNotes, formatClipboardText } from './sync.js'
 import { sendNotification } from './notification.js'
@@ -110,15 +115,50 @@ const runWatch = async (
   statePath: string,
   intervalSeconds: number,
   debounceSeconds: number,
+  promptAccessibility: boolean,
+  requireAccessibility: boolean,
 ) => {
   const permissions = await printPermissions(account)
   if (permissions.notes.status !== 'granted') {
-    throw new Error(`Notes permission unavailable: ${permissions.notes.detail}`)
+    throw new Error(formatNotesGuidance(permissions.notes.detail))
+  }
+
+  let accessibilityStatus = permissions.accessibility
+  if (promptAccessibility && accessibilityStatus.status !== 'granted') {
+    accessibilityStatus = await checkAccessibilityPermission(true)
+    printResult('permission', {
+      accessibility: accessibilityStatus.status,
+    })
+    printResult('permission-detail', {
+      accessibility: accessibilityStatus.detail,
+    })
+  }
+
+  if (requireAccessibility && accessibilityStatus.status !== 'granted') {
+    throw new Error(formatAccessibilityGuidance(accessibilityStatus.detail))
   }
 
   const previousState = await loadState(statePath)
   if (!previousState) {
     await runInit(account, statePath)
+  }
+
+  let activeClipboard = ''
+  let bufferedClipboard = ''
+  let flushTimer: NodeJS.Timeout | null = null
+  let pasteConsumeStatus = accessibilityStatus
+  const listener = createPasteShortcutListener(() => {
+    if (!activeClipboard) return
+    activeClipboard = ''
+    printResult('consume', { status: 'consumed' })
+  })
+
+  if (accessibilityStatus.status === 'granted') {
+    pasteConsumeStatus = await listener.start()
+  }
+
+  if (requireAccessibility && pasteConsumeStatus.status !== 'granted') {
+    throw new Error(formatAccessibilityGuidance(pasteConsumeStatus.detail))
   }
 
   printResult('watch', {
@@ -127,25 +167,15 @@ const runWatch = async (
     state: statePath,
   })
 
-  let activeClipboard = ''
-  let bufferedClipboard = ''
-  let flushTimer: NodeJS.Timeout | null = null
-  let accessibilityEnabled = permissions.accessibility.status === 'granted'
-  const listener = createPasteShortcutListener(() => {
-    if (!activeClipboard) return
-    activeClipboard = ''
-    printResult('consume', { status: 'consumed' })
-  })
-
-  if (accessibilityEnabled) {
-    const listenerStatus = await listener.start()
-    accessibilityEnabled = listenerStatus === 'granted'
-  }
-
-  if (!accessibilityEnabled) {
+  if (pasteConsumeStatus.status === 'granted') {
+    printResult('watch-mode', {
+      pasteConsume: 'enabled',
+    })
+  } else {
     printResult('watch-mode', {
       pasteConsume: 'disabled',
-      reason: 'accessibility-denied',
+      reason: pasteConsumeStatus.detail,
+      status: pasteConsumeStatus.status,
     })
   }
 
@@ -158,7 +188,7 @@ const runWatch = async (
 
       try {
         const nextClipboard = activeClipboard
-          ? `${activeClipboard}\n\n${text}`
+          ? `${activeClipboard}${text}`
           : text
         await flushClipboard(nextClipboard)
         activeClipboard = nextClipboard
@@ -174,7 +204,7 @@ const runWatch = async (
       const result = await runOnce(account, statePath)
       if (result?.clipboardText) {
         bufferedClipboard = bufferedClipboard
-          ? `${bufferedClipboard}\n\n${result.clipboardText}`
+          ? `${bufferedClipboard}${result.clipboardText}`
           : result.clipboardText
 
         const notificationMessage = [
@@ -209,6 +239,8 @@ const main = async () => {
       config.statePath,
       config.intervalSeconds,
       config.debounceSeconds,
+      config.promptAccessibility,
+      config.requireAccessibility,
     )
     return
   }
